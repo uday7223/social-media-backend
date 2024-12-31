@@ -74,6 +74,41 @@ app.post('/login', (req, res) => {
     });
 });
 
+
+app.post('/posts', (req, res) => {
+    const { user_id, title, content } = req.body;
+    const query = `INSERT INTO posts (user_id, title, content) VALUES (?, ?, ?)`;
+    
+    db.query(query, [user_id, title, content], (err, result) => {
+        if (err) return res.status(500).json({ error: 'Error creating post' });
+        // res.status(201).json({ message: 'Post created successfully', });
+        const newPost = {
+            post_id: result.insertId,
+            title,
+            content,
+            created_at: new Date()
+        };
+
+        res.status(201).json({message:'Post created successfully', ...newPost});
+
+    });
+});
+
+app.get('/posts', (req, res) => {
+    const query = `
+        SELECT p.post_id, p.title, p.content, p.created_at, u.username 
+        FROM posts p 
+        JOIN users u ON p.user_id = u.user_id
+        ORDER BY p.created_at DESC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json({ error: 'Error fetching posts' });
+        res.status(200).json(results);
+    });
+});
+
+
 // Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
