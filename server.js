@@ -77,22 +77,30 @@ app.post('/login', (req, res) => {
 
 app.post('/posts', (req, res) => {
     const { user_id, title, content } = req.body;
-    const query = `INSERT INTO posts (user_id, title, content) VALUES (?, ?, ?)`;
+    const insertQuery = `INSERT INTO posts (user_id, title, content) VALUES (?, ?, ?)`;
     
-    db.query(query, [user_id, title, content], (err, result) => {
+    db.query(insertQuery, [user_id, title, content], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error creating post' });
-        // res.status(201).json({ message: 'Post created successfully', });
-        const newPost = {
-            post_id: result.insertId,
-            title,
-            content,
-            created_at: new Date()
-        };
+        
+        const newPostId = result.insertId;
 
-        res.status(201).json({message:'Post created successfully', ...newPost});
+        // Fetch the post with username
+        const fetchQuery = `
+            SELECT p.post_id, p.title, p.content, p.created_at, u.username 
+            FROM posts p 
+            JOIN users u ON p.user_id = u.user_id
+            WHERE p.post_id = ?
+        `;
+        
+        db.query(fetchQuery, [newPostId], (err, results) => {
+            if (err) return res.status(500).json({ error: 'Error fetching created post' });
 
+            const newPost = results[0];
+            res.status(201).json({ message: 'Post created successfully', ...newPost });
+        });
     });
 });
+
 
 app.get('/posts', (req, res) => {
     const query = `
@@ -104,6 +112,50 @@ app.get('/posts', (req, res) => {
 
     db.query(query, (err, results) => {
         if (err) return res.status(500).json({ error: 'Error fetching posts' });
+        res.status(200).json(results);
+    });
+});
+
+
+//api for comments
+app.post('/comments', (req, res) => {
+    const { post_id, user_id, content } = req.body;
+    const query = `INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)`;
+
+    db.query(query, [post_id, user_id, content], (err, result) => {
+        if (err) return res.status(500).json({ error: 'Failed to add comment' });
+        
+        const newComment = {
+            comment_id: result.insertId,
+            post_id,
+            content,
+            created_at: new Date()
+        };
+
+        // Fetch username for the comment
+        const fetchQuery = `SELECT username FROM users WHERE user_id = ?`;
+        db.query(fetchQuery, [user_id], (fetchErr, fetchResult) => {
+            if (fetchErr) return res.status(500).json({ error: 'Error fetching user' });
+            newComment.username = fetchResult[0].username;
+            res.status(201).json(newComment);
+        });
+    });
+});
+
+
+
+app.get('/comments/:post_id', (req, res) => {
+    const { post_id } = req.params;
+    const query = `
+        SELECT c.comment_id, c.content, c.created_at, u.username 
+        FROM comments c
+        JOIN users u ON c.user_id = u.user_id
+        WHERE c.post_id = ?
+        ORDER BY c.created_at DESC
+    `;
+
+    db.query(query, [post_id], (err, results) => {
+        if (err) return res.status(500).json({ error: 'Error fetching comments' });
         res.status(200).json(results);
     });
 });
