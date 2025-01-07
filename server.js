@@ -35,18 +35,39 @@ app.get('/', (req, res) => {
 // Users API
 app.post('/register', async (req, res) => {
     const { username, password } = req.body;
-    // console.log("user logged in : "+username+password);
-    
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const query = `INSERT INTO users (username, password) VALUES (?, ?)`;
-    db.query(query, [username, hashedPassword], (err, result) => {
-        if (err) {
-            console.error('Database Error:', err);
-            return res.status(500).send(err);
-        }
-        res.status(201).send('User registered successfully!');
-    });
+    try {
+        // Step 1: Check if the username already exists
+        const checkQuery = 'SELECT * FROM users WHERE username = ?';
+        db.query(checkQuery, [username], async (err, results) => {
+            if (err) {
+                console.error('Database Error:', err);
+                return res.status(500).send('Error checking existing user');
+            }
+
+            // If username already exists, send error response
+            if (results.length > 0) {
+                return res.status(400).json({ message: "User already exists, try a new username !" });
+            }
+
+            // Step 2: Hash the password
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+            // Step 3: Insert new user into database
+            const insertQuery = `INSERT INTO users (username, password) VALUES (?, ?)`;
+            db.query(insertQuery, [username, hashedPassword], (err, result) => {
+                if (err) {
+                    console.error('Database Error:', err);
+                    return res.status(500).send(err);
+                }
+                res.status(201).send('User registered successfully!');
+            });
+        });
+
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send('Internal Server Error');
+    }
 });
 
 
@@ -78,10 +99,10 @@ app.post('/login', (req, res) => {
 app.post('/posts', (req, res) => {
     const { user_id, title, content } = req.body;
     const insertQuery = `INSERT INTO posts (user_id, title, content) VALUES (?, ?, ?)`;
-    
+
     db.query(insertQuery, [user_id, title, content], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error creating post' });
-        
+
         const newPostId = result.insertId;
 
         // Fetch the post with username
@@ -91,7 +112,7 @@ app.post('/posts', (req, res) => {
             JOIN users u ON p.user_id = u.user_id
             WHERE p.post_id = ?
         `;
-        
+
         db.query(fetchQuery, [newPostId], (err, results) => {
             if (err) return res.status(500).json({ error: 'Error fetching created post' });
 
@@ -124,7 +145,7 @@ app.post('/comments', (req, res) => {
 
     db.query(query, [post_id, user_id, content], (err, result) => {
         if (err) return res.status(500).json({ error: 'Failed to add comment' });
-        
+
         const newComment = {
             comment_id: result.insertId,
             post_id,
@@ -164,7 +185,7 @@ app.get('/comments/:post_id', (req, res) => {
 app.post('/replies', (req, res) => {
     const { comment_id, user_id, content } = req.body;
     const query = `INSERT INTO replies (comment_id, user_id, content) VALUES (?, ?, ?)`;
-    
+
     db.query(query, [comment_id, user_id, content], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error adding reply' });
         const newReply = {
@@ -188,7 +209,7 @@ app.get('/replies/:comment_id', (req, res) => {
         WHERE r.comment_id = ?
         ORDER BY r.created_at ASC
     `;
-    
+
     db.query(query, [comment_id], (err, results) => {
         if (err) return res.status(500).json({ error: 'Error fetching replies' });
         res.status(200).json(results);
@@ -202,7 +223,7 @@ app.post('/likes', (req, res) => {
 
     db.query(checkQuery, [post_id, user_id], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error checking like' });
-        
+
         if (result.length > 0) {
             const deleteQuery = `DELETE FROM likes WHERE post_id = ? AND user_id = ?`;
             db.query(deleteQuery, [post_id, user_id], (err) => {
@@ -228,6 +249,48 @@ app.get('/likes/:post_id', (req, res) => {
         if (err) return res.status(500).json({ error: 'Error fetching likes' });
         res.status(200).json(results[0]);
     });
+});
+
+// Get user profile
+app.get('/profile/:userId', async (req, res) => {
+    const { userId } = req.params;
+
+    const query = `SELECT * FROM users WHERE user_id = ?`;
+    db.query(query, [userId], async (err, results) => {
+        if (err) return res.status(500).send(err);
+        if (results.length > 0) {
+            const user = results[0];
+            res.status(200).send(user );
+        } else {
+            res.status(401).send('Invalid credentials');
+        }
+    });
+
+
+
+
+    // try {
+    //     const [user] =  db.query('SELECT * FROM users WHERE user_id = ?', [userId]);
+    //     res.json(user[0]);
+    // } catch (err) {
+    //     res.status(500).send('Error fetching profile');
+    // }
+});
+
+// Update user profile
+app.put('/profile/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const { username, bio, profile_picture } = req.body;
+
+    try {
+         db.query(
+            'UPDATE users SET username = ?, bio = ?, profile_picture = ? WHERE user_id = ?',
+            [username, bio, profile_picture, userId]
+        );
+        res.send('Profile updated successfully');
+    } catch (err) {
+        res.status(500).send('Error updating profile');
+    }
 });
 
 
